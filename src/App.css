@@ -1,0 +1,163 @@
+.app {
+  position: relative;
+  height: 100dvh;
+  overflow: hidden;
+}
+
+.topbar {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+.topbar__title {
+  flex: 1;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: var(--color-panel);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+  font-weight: bold;
+  pointer-events: auto;
+}
+
+.badge {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 12px;
+}
+
+.icon-button {
+  width: 44px;
+  height: 44px;
+  border: none;
+  border-radius: 50%;
+  background: var(--color-panel);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.12);
+  font-size: 20px;
+  pointer-events: auto;
+}
+
+.panel {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 14px 16px;
+  border-radius: 20px;
+  background: var(--color-panel);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+}
+
+.panel__status {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 14px;
+  color: var(--color-muted);
+}
+
+.panel__status b {
+  color: var(--color-text);
+}
+
+.panel__message {
+  margin: 0 0 12px;
+  line-height: 1.6;
+}
+
+.dice {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-right: 6px;
+  border-radius: 8px;
+  background: var(--color-accent);
+  color: #fff;
+  font-weight: bold;
+}
+
+button {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 2px solid var(--color-accent);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--color-accent-dark);
+  font: inherit;
+  font-weight: bold;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+button.primary {
+  width: 100%;
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.choices {
+  display: flex;
+  gap: 8px;
+}
+
+.choices button {
+  flex: 1;
+}
+
+.settings {
+  position: absolute;
+  top: 68px;
+  right: 12px;
+  width: min(320px, calc(100% - 24px));
+  padding: 16px;
+  border-radius: 16px;
+  background: var(--color-panel);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 1;
+}
+
+.settings h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.settings fieldset {
+  margin: 0;
+  padding: 8px 12px;
+  border: 1px solid #eee2da;
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.settings label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.settings fieldset label,
+.settings > label:has(input[type='checkbox']) {
+  flex-direction: row;
+  align-items: center;
+}
