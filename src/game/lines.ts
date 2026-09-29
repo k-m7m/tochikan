@@ -26,7 +26,13 @@ export const PROTOTYPE_LINE_COLORS: Record<LineId, string> = {
   '11314': '#5b7fd6',
 }
 
-/** 画面に出す路線名。「JR」や区間の書き添えを省いて短くする */
+/**
+ * 画面に出す路線名。「JR」や区間の書き添えを省いて短くする。
+ * 「(快速)」は、各駅停車の路線と区別するため「快速」として残す
+ */
 export function shortLineName(name: string): string {
-  return name.replace(/^JR/, '').replace(/\(.*?\)$/, '')
+  return name
+    .replace(/^JR/, '')
+    .replace(/\(快速\)$/, '快速')
+    .replace(/\(.*?\)$/, '')
 }

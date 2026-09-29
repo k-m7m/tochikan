@@ -175,3 +175,56 @@ export function hopDistances(board: Board, from: NodeId): Map<NodeId, number> {
   }
   return dist
 }
+
+/**
+ * 1つの路線を、分岐や終点で区切った駅の並びに分ける。
+ * 地図の線に沿って路線名を書くため、短い区間ではなく長い線にまとめる。
+ * 環状線は、始めと終わりが同じ駅の並びになる。
+ */
+export function lineChains(board: Board, lineId: LineId): NodeId[][] {
+  const adjacent = new Map<NodeId, Set<NodeId>>()
+  for (const s of board.segments) {
+    if (s.lineId !== lineId) continue
+    for (const [a, b] of [
+      [s.from, s.to],
+      [s.to, s.from],
+    ]) {
+      if (!adjacent.has(a)) adjacent.set(a, new Set())
+      adjacent.get(a)!.add(b)
+    }
+  }
+  const used = new Set<string>()
+  const key = (a: NodeId, b: NodeId) => (a < b ? `${a}|${b}` : `${b}|${a}`)
+
+  const walk = (start: NodeId, next: NodeId): NodeId[] => {
+    const chain = [start]
+    let prev = start
+    let cur = next
+    used.add(key(prev, cur))
+    for (;;) {
+      chain.push(cur)
+      const around = adjacent.get(cur)!
+      if (around.size !== 2) break
+      const following = [...around].find(
+        (n) => n !== prev && !used.has(key(cur, n)),
+      )
+      if (!following) break
+      used.add(key(cur, following))
+      prev = cur
+      cur = following
+    }
+    return chain
+  }
+
+  const chains: NodeId[][] = []
+  // 終点や分岐（つながりが2本でない駅）から歩き始める
+  for (const [n, around] of adjacent) {
+    if (around.size === 2) continue
+    for (const m of around) if (!used.has(key(n, m))) chains.push(walk(n, m))
+  }
+  // 残りは環状線
+  for (const [n, around] of adjacent) {
+    for (const m of around) if (!used.has(key(n, m))) chains.push(walk(n, m))
+  }
+  return chains
+}
