@@ -1,233 +1,165 @@
-// 山手線だけの試作（工程1）。
-// 遊んでみて、正解とみなす距離や地図の表示を決めるためのもの（#19）。
+// 試作2：目的地レース（案A、#52）。
+// 実データの盤面（#51）で、駅名だけの目的地へサイコロで向かう。
 
 import { useCallback, useMemo, useState } from 'react'
 import './App.css'
-import MapView, { type MapPin } from './components/MapView'
-import yamanote from './data/prototype/yamanote.json'
-import { buildRailGraph } from './data/railGraph'
-import type { RailData, StationId } from './data/types'
+import MapView, { type MapFocus } from './components/MapView'
+import rail from './data/generated/rail.json'
+import type { RailData } from './data/types'
+import { buildBoard, type NodeId } from './game/board'
+import { clearKnown, loadKnown, saveKnown } from './game/knownStations'
 import {
-  directions,
-  judgeGuess,
-  pickStartAndGoal,
-  rollDice,
-  walk,
-  type Judgement,
-  type WalkResult,
-} from './game/sugoroku'
-import type { LatLng } from './lib/geo'
+  BEGINNER_LINES,
+  PROTOTYPE_LINE_COLORS,
+  shortLineName,
+} from './game/lines'
+import type { TransferRule } from './game/movement'
+import {
+  choose,
+  defaultRaceSettings,
+  nextGoal,
+  roll,
+  showHint,
+  startRace,
+  type RaceSettings,
+  type RaceState,
+} from './game/race'
+import { direction8, distanceMeters } from './lib/geo'
 
-const graph = buildRailGraph(yamanote as RailData)
+const board = buildBoard(rail as RailData, BEGINNER_LINES)
+const lineName = new Map(board.lines.map((l) => [l.id, shortLineName(l.name)]))
+const node = (id: NodeId) => board.nodes.get(id)!
 
-type DisplayMode = 'linesAndStations' | 'linesOnly' | 'none'
+function rollDice(): number {
+  return 1 + Math.floor(Math.random() * 6)
+}
 
-const displayModes: { value: DisplayMode; label: string }[] = [
-  { value: 'linesAndStations', label: '線と駅（初級）' },
-  { value: 'linesOnly', label: '線だけ（中級）' },
-  { value: 'none', label: 'なし（上級）' },
-]
+/** 道順で使った路線を、重ねずに並べる（例：中央線(快速) → 山手線） */
+function describeLines(lineIds: string[]): string {
+  const names: string[] = []
+  for (const id of lineIds) {
+    const name = lineName.get(id) ?? id
+    if (names[names.length - 1] !== name) names.push(name)
+  }
+  return names.join(' → ')
+}
 
-interface Settings {
-  displayMode: DisplayMode
-  thresholdMeters: number
+interface DebugSettings {
   showGoal: boolean
 }
 
-type Phase =
-  | { kind: 'ready' }
-  | { kind: 'chooseDirection'; dice: number }
-  | { kind: 'guessing'; dice: number; move: WalkResult; guess?: LatLng }
-  | {
-      kind: 'judged'
-      dice: number
-      move: WalkResult
-      guess: LatLng
-      judgement: Judgement
-    }
-  | { kind: 'finished' }
-
-interface Game {
-  start: StationId
-  goal: StationId
-  current: StationId
-  turns: number
-  correct: number
-  phase: Phase
-}
-
-function newGame(): Game {
-  const { start, goal } = pickStartAndGoal(graph)
-  return {
-    start,
-    goal,
-    current: start,
-    turns: 0,
-    correct: 0,
-    phase: { kind: 'ready' },
-  }
-}
-
-const station = (id: StationId) => graph.stations.get(id)!
-
-function formatDistance(m: number): string {
-  return m < 1000 ? `${Math.round(m)}m` : `${(m / 1000).toFixed(1)}km`
-}
-
 export default function App() {
-  const [game, setGame] = useState<Game>(newGame)
-  const [settings, setSettings] = useState<Settings>({
-    displayMode: 'linesAndStations',
-    thresholdMeters: 500,
-    showGoal: true,
-  })
+  const [settings, setSettings] = useState<RaceSettings>(defaultRaceSettings)
+  const [debug, setDebug] = useState<DebugSettings>({ showGoal: false })
+  const [race, setRace] = useState<RaceState>(() =>
+    startRace(board, defaultRaceSettings),
+  )
+  const [known, setKnown] = useState<Set<NodeId>>(loadKnown)
   const [settingsOpen, setSettingsOpen] = useState(false)
 
-  const { phase } = game
-  const current = station(game.current)
-  const goal = station(game.goal)
+  const remember = useCallback((ids: NodeId[]) => {
+    setKnown((prev) => {
+      const next = new Set(prev)
+      for (const id of ids) next.add(id)
+      saveKnown(next)
+      return next
+    })
+  }, [])
 
-  const pins = useMemo<MapPin[]>(() => {
-    const result: MapPin[] = []
-    if (settings.showGoal || phase.kind === 'finished') {
-      result.push({
-        id: 'goal',
-        kind: 'goal',
-        position: goal,
-        label: `ゴール ${goal.name}`,
-      })
-    }
-    if (phase.kind !== 'finished' && current !== goal) {
-      result.push({
-        id: 'current',
-        kind: 'current',
-        position: current,
-        label: `いまここ ${current.name}`,
-      })
-    }
-    if (phase.kind === 'guessing' && phase.guess) {
-      result.push({
-        id: 'guess',
-        kind: 'guess',
-        position: phase.guess,
-        label: 'ここ？',
-      })
-    }
-    if (phase.kind === 'judged') {
-      const answer = station(phase.move.stop)
-      result.push({
-        id: 'guess',
-        kind: 'guess',
-        position: phase.guess,
-        label: 'よそう',
-      })
-      result.push({
-        id: 'answer',
-        kind: 'answer',
-        position: answer,
-        label: answer.name,
-      })
-    }
-    return result
-  }, [phase, current, goal, settings.showGoal])
+  const { phase } = race
+  const current = node(race.position)
+  const goal = node(race.goal)
+  const candidates = useMemo(
+    () => (phase.kind === 'choosing' ? [...phase.options.keys()] : []),
+    [phase],
+  )
 
-  const focus = useMemo(() => {
-    if (phase.kind === 'judged') {
+  const focus = useMemo<MapFocus | undefined>(() => {
+    if (phase.kind === 'choosing') {
       return {
-        key: `judged-${game.turns}`,
-        points: [phase.guess, station(phase.move.stop), current],
+        key: `choosing-${race.turns}`,
+        points: [current, ...candidates.map(node)],
+      }
+    }
+    if (phase.kind === 'arrived') {
+      return {
+        key: `arrived-${race.turns}`,
+        points: [node(race.goalStartedAt), goal],
       }
     }
     if (phase.kind === 'ready') {
+      // 自分の番になったら、今いる駅と、直前に進んだ道順が見えるようにする
+      const moved = race.lastMove
+        ? [race.lastMove.from, ...race.lastMove.route.nodes].map(node)
+        : []
       return {
-        key: `ready-${game.start}-${game.goal}-${game.turns}`,
-        points: settings.showGoal ? [current, goal] : [current],
-        maxZoom: 13,
+        key: `ready-${race.turns}-${race.goal}`,
+        points: [current, ...moved],
+        maxZoom: 12,
       }
     }
     return undefined
   }, [
     phase,
-    game.turns,
-    game.start,
-    game.goal,
+    race.turns,
+    race.goal,
+    race.goalStartedAt,
+    race.lastMove,
     current,
+    candidates,
     goal,
-    settings.showGoal,
   ])
 
-  const onTap = useCallback((position: LatLng) => {
-    setGame((g) =>
-      g.phase.kind === 'guessing'
-        ? { ...g, phase: { ...g.phase, guess: position } }
-        : g,
-    )
-  }, [])
-
-  const roll = () => {
-    setGame((g) => ({
-      ...g,
-      turns: g.turns + 1,
-      phase: { kind: 'chooseDirection', dice: rollDice() },
-    }))
+  const onRoll = () => {
+    remember([race.position])
+    setRace((r) => roll(r, board, settings, rollDice()))
   }
 
-  const chooseDirection = (firstStep: StationId) => {
-    setGame((g) => {
-      if (g.phase.kind !== 'chooseDirection') return g
-      const move = walk(graph, g.current, firstStep, g.phase.dice, g.goal)
-      return { ...g, phase: { kind: 'guessing', dice: g.phase.dice, move } }
-    })
+  const onChoose = useCallback(
+    (id: NodeId) => {
+      if (race.phase.kind !== 'choosing') return
+      const route = race.phase.options.get(id)
+      if (!route) return
+      remember(route.nodes)
+      setRace(choose(race, board, id))
+    },
+    [race, remember],
+  )
+
+  const restart = (s: RaceSettings = settings) => {
+    setRace(startRace(board, s))
   }
 
-  const submitGuess = () => {
-    setGame((g) => {
-      if (g.phase.kind !== 'guessing' || !g.phase.guess) return g
-      const judgement = judgeGuess(
-        g.phase.guess,
-        station(g.phase.move.stop),
-        settings.thresholdMeters,
-      )
-      return {
-        ...g,
-        correct: g.correct + (judgement.correct ? 1 : 0),
-        phase: { ...g.phase, kind: 'judged', guess: g.phase.guess, judgement },
+  const hint = race.hintShown
+    ? {
+        direction: direction8(current, goal),
+        km: distanceMeters(current, goal) / 1000,
       }
-    })
-  }
-
-  const next = () => {
-    setGame((g) => {
-      if (g.phase.kind !== 'judged') return g
-      const stop = g.phase.move.stop
-      return {
-        ...g,
-        current: stop,
-        phase: g.phase.move.reachedGoal
-          ? { kind: 'finished' }
-          : { kind: 'ready' },
-      }
-    })
-  }
-
-  const showLines = settings.displayMode !== 'none'
-  const showStations = settings.displayMode === 'linesAndStations'
+    : undefined
 
   return (
     <div className="app">
       <MapView
-        graph={graph}
-        showLines={showLines || phase.kind === 'judged'}
-        showStations={showStations || phase.kind === 'judged'}
-        pins={pins}
-        onTap={onTap}
+        board={board}
+        lineColors={PROTOTYPE_LINE_COLORS}
+        current={race.position}
+        known={known}
+        candidates={candidates}
+        onChoose={onChoose}
+        goal={
+          debug.showGoal || phase.kind === 'arrived' ? race.goal : undefined
+        }
+        lastMove={phase.kind !== 'choosing' ? race.lastMove : undefined}
         focus={focus}
       />
 
       <header className="topbar">
         <div className="topbar__title">
-          <span className="badge">試作</span>
-          {goal.name}でお茶しよう！
+          <span className="badge">
+            {Math.min(race.reachedGoals.length + 1, settings.goals)}/
+            {settings.goals}
+          </span>
+          🎯 <b>{goal.name}</b> へ行こう！
         </div>
         <button
           className="icon-button"
@@ -241,7 +173,17 @@ export default function App() {
       {settingsOpen && (
         <SettingsPanel
           settings={settings}
-          onChange={setSettings}
+          debug={debug}
+          knownCount={known.size}
+          onChange={(s) => {
+            setSettings(s)
+            restart(s)
+          }}
+          onDebugChange={setDebug}
+          onResetKnown={() => {
+            clearKnown()
+            setKnown(new Set())
+          }}
           onClose={() => setSettingsOpen(false)}
         />
       )}
@@ -251,61 +193,82 @@ export default function App() {
           <span>
             いま：<b>{current.name}</b>
           </span>
-          <span>{game.turns}ターン目</span>
-          <span>正解 {game.correct}</span>
+          <span>{race.turns}ターン</span>
+          <span>
+            覚えた駅 {known.size}/{board.nodes.size}
+          </span>
         </div>
 
-        {phase.kind === 'ready' && (
-          <button className="primary" onClick={roll}>
-            🎲 サイコロをふる
-          </button>
+        {hint && (
+          <p className="hint">
+            💡 {goal.name}は、ここから<b>{hint.direction}</b>に約
+            {hint.km.toFixed(1)}km
+          </p>
         )}
 
-        {phase.kind === 'chooseDirection' && (
+        {phase.kind === 'ready' && (
+          <div className="actions">
+            <button className="primary" onClick={onRoll}>
+              🎲 サイコロをふる
+            </button>
+            {!race.hintShown && (
+              <button onClick={() => setRace(showHint)}>💡 ヒント</button>
+            )}
+          </div>
+        )}
+
+        {phase.kind === 'choosing' && (
           <>
             <p className="panel__message">
               <span className="dice">{phase.dice}</span>
-              が出た！どっちに進む？
+              {candidates.length > 0
+                ? 'ピンクの駅から、行き先を選んでね'
+                : '進める駅がない…'}
             </p>
             <div className="choices">
-              {directions(graph, game.current).map((id) => (
-                <button key={id} onClick={() => chooseDirection(id)}>
-                  {station(id).name} の方へ
+              {candidates
+                .map(node)
+                .sort((a, b) => a.name.localeCompare(b.name, 'ja'))
+                .map((n) => (
+                  <button key={n.id} onClick={() => onChoose(n.id)}>
+                    {n.name}
+                    <small className="choices__line">
+                      {describeLines(phase.options.get(n.id)!.lineIds)}
+                    </small>
+                  </button>
+                ))}
+              {candidates.length === 0 && (
+                <button
+                  onClick={() =>
+                    setRace((r) => ({ ...r, phase: { kind: 'ready' } }))
+                  }
+                >
+                  このターンは休む
                 </button>
-              ))}
+              )}
             </div>
           </>
         )}
 
-        {phase.kind === 'guessing' && (
+        {phase.kind === 'arrived' && (
           <>
             <p className="panel__message">
-              {phase.move.reachedGoal
-                ? 'ゴールに着く！'
-                : `${phase.move.path.length}駅進んだ。`}
-              止まる駅はどこ？地図をタップしてね
+              🎉 <b>{goal.name}</b>に到着！（{phase.turnsForGoal}ターン）
+              <br />
+              {goal.name}を通る路線：
+              {goal.lineIds.map((id) => lineName.get(id)).join('・')}
+              <br />
+              最短なら{node(race.goalStartedAt).name}から
+              {phase.shortest.nodes.length}駅（
+              {describeLines(phase.shortest.lineIds)}）
             </p>
             <button
               className="primary"
-              disabled={!phase.guess}
-              onClick={submitGuess}
+              onClick={() => setRace((r) => nextGoal(r, board, settings))}
             >
-              ここにする
-            </button>
-          </>
-        )}
-
-        {phase.kind === 'judged' && (
-          <>
-            <p className="panel__message">
-              {phase.judgement.correct ? '⭕ 正解！' : '❌ ざんねん'}
-              <b>{station(phase.move.stop).name}</b>（
-              {station(phase.move.stop).kana}）でした。
-              <br />
-              ずれ：{formatDistance(phase.judgement.distance)}
-            </p>
-            <button className="primary" onClick={next}>
-              {phase.move.reachedGoal ? '結果を見る' : '次へ'}
+              {race.reachedGoals.length >= settings.goals
+                ? '結果を見る'
+                : '次の目的地へ'}
             </button>
           </>
         )}
@@ -313,9 +276,10 @@ export default function App() {
         {phase.kind === 'finished' && (
           <>
             <p className="panel__message">
-              🎉 {goal.name}に到着！ {game.turns}ターン、正解 {game.correct}回
+              🏁 {settings.goals}か所を<b>{race.turns}ターン</b>で回った！
+              （ヒント {race.hintsUsed}回）
             </p>
-            <button className="primary" onClick={() => setGame(newGame())}>
+            <button className="primary" onClick={() => restart()}>
               もう一度あそぶ
             </button>
           </>
@@ -327,53 +291,68 @@ export default function App() {
 
 function SettingsPanel({
   settings,
+  debug,
+  knownCount,
   onChange,
+  onDebugChange,
+  onResetKnown,
   onClose,
 }: {
-  settings: Settings
-  onChange: (s: Settings) => void
+  settings: RaceSettings
+  debug: DebugSettings
+  knownCount: number
+  onChange: (s: RaceSettings) => void
+  onDebugChange: (d: DebugSettings) => void
+  onResetKnown: () => void
   onClose: () => void
 }) {
+  const rules: { value: TransferRule; label: string }[] = [
+    { value: 'anywhere', label: '通過中も乗り換えられる' },
+    { value: 'onlyWhenStopped', label: '止まった駅でだけ乗り換えられる' },
+  ]
   return (
     <div className="settings">
       <h2>試作の設定</h2>
+      <p className="settings__note">変えると、最初からやり直しになります</p>
       <fieldset>
-        <legend>予想するときの地図</legend>
-        {displayModes.map((m) => (
-          <label key={m.value}>
+        <legend>乗換のルール</legend>
+        {rules.map((r) => (
+          <label key={r.value}>
             <input
               type="radio"
-              name="displayMode"
-              checked={settings.displayMode === m.value}
-              onChange={() => onChange({ ...settings, displayMode: m.value })}
+              name="rule"
+              checked={settings.rule === r.value}
+              onChange={() => onChange({ ...settings, rule: r.value })}
             />
-            {m.label}
+            {r.label}
           </label>
         ))}
       </fieldset>
       <label>
-        正解とみなす距離：{settings.thresholdMeters}m
+        回る目的地の数：{settings.goals}か所
         <input
           type="range"
-          min={100}
-          max={1500}
-          step={100}
-          value={settings.thresholdMeters}
+          min={1}
+          max={10}
+          value={settings.goals}
           onChange={(e) =>
-            onChange({ ...settings, thresholdMeters: Number(e.target.value) })
+            onChange({ ...settings, goals: Number(e.target.value) })
           }
         />
       </label>
-      <label>
+      <label className="settings__check">
         <input
           type="checkbox"
-          checked={settings.showGoal}
+          checked={debug.showGoal}
           onChange={(e) =>
-            onChange({ ...settings, showGoal: e.target.checked })
+            onDebugChange({ ...debug, showGoal: e.target.checked })
           }
         />
-        ゴールの位置を地図に出す
+        目的地の位置を地図に出す（確認用）
       </label>
+      <button onClick={onResetKnown}>
+        覚えた駅（{knownCount}駅）をリセット
+      </button>
       <button onClick={onClose}>閉じる</button>
     </div>
   )
