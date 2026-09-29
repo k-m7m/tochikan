@@ -210,3 +210,36 @@ button.primary {
   font-weight: normal;
   color: var(--color-muted);
 }
+
+.panel__message--center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.dice--big {
+  width: 44px;
+  height: 44px;
+  margin-right: 4px;
+  border-radius: 10px;
+  font-size: 24px;
+}
+
+.dice--rolling {
+  animation: dice-shake 0.14s infinite alternate;
+}
+
+@keyframes dice-shake {
+  from {
+    transform: rotate(-12deg);
+  }
+  to {
+    transform: rotate(12deg);
+  }
+}
+
+.remaining {
+  font-size: 24px;
+  color: var(--color-accent-dark);
+}
