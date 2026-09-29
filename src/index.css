@@ -1,0 +1,23 @@
+:root {
+  --color-bg: #fff7ef;
+  --color-text: #4a3b35;
+  --color-accent: #ff8fa3;
+  --color-accent-dark: #e8647f;
+  --color-panel: #ffffff;
+  --color-muted: #9b8a82;
+  font-family:
+    'Hiragino Maru Gothic ProN', 'Hiragino Sans', 'Noto Sans JP', sans-serif;
+  color: var(--color-text);
+  background: var(--color-bg);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  height: 100%;
+}
