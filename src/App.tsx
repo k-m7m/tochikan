@@ -7,6 +7,7 @@ import './App.css'
 import MapView, { type MapFocus } from './components/MapView'
 import rail from './data/generated/rail.json'
 import type { RailData } from './data/types'
+import type { LineId } from './data/types'
 import { buildBoard, type NodeId } from './game/board'
 import { clearKnown, loadKnown, saveKnown } from './game/knownStations'
 import {
@@ -14,6 +15,7 @@ import {
   PROTOTYPE_LINE_COLORS,
   shortLineName,
 } from './game/lines'
+import { lineForStep } from './game/movement'
 import {
   defaultRaceSettings,
   nextGoal,
@@ -29,6 +31,7 @@ import { direction8, distanceMeters } from './lib/geo'
 
 const board = buildBoard(rail as RailData, BEGINNER_LINES)
 const lineName = new Map(board.lines.map((l) => [l.id, shortLineName(l.name)]))
+const lineNames: Record<LineId, string> = Object.fromEntries(lineName)
 const node = (id: NodeId) => board.nodes.get(id)!
 
 /** サイコロを振る演出の長さと、1駅進む間隔（ミリ秒） */
@@ -62,6 +65,9 @@ export default function App() {
   )
   const [known, setKnown] = useState<Set<NodeId>>(loadKnown)
   const [settingsOpen, setSettingsOpen] = useState(false)
+  const [legendOpen, setLegendOpen] = useState(false)
+  /** 路線の一覧で選んだ路線。地図でその路線だけを目立たせる */
+  const [highlightLine, setHighlightLine] = useState<LineId | undefined>()
   /** サイコロを振っている途中に見せる目。振っていなければ null */
   const [rollingFace, setRollingFace] = useState<number | null>(null)
   const rollTimer = useRef<number | undefined>(undefined)
@@ -158,6 +164,8 @@ export default function App() {
       <MapView
         board={board}
         lineColors={PROTOTYPE_LINE_COLORS}
+        lineNames={lineNames}
+        highlightLine={legendOpen ? highlightLine : undefined}
         current={race.position}
         known={known}
         candidates={choosing ? options.map((o) => o.to) : []}
@@ -205,6 +213,43 @@ export default function App() {
           }}
           onClose={() => setSettingsOpen(false)}
         />
+      )}
+
+      <button
+        className="legend-button"
+        aria-expanded={legendOpen}
+        onClick={() => setLegendOpen((o) => !o)}
+      >
+        🚃 路線
+      </button>
+
+      {legendOpen && (
+        <div className="legend">
+          <p className="legend__note">押すと、その路線だけを目立たせます</p>
+          <ul>
+            {board.lines.map((l) => (
+              <li key={l.id}>
+                <button
+                  className={
+                    highlightLine === l.id
+                      ? 'legend__item legend__item--active'
+                      : 'legend__item'
+                  }
+                  onClick={() =>
+                    setHighlightLine((h) => (h === l.id ? undefined : l.id))
+                  }
+                >
+                  <span
+                    className="legend__swatch"
+                    style={{ background: PROTOTYPE_LINE_COLORS[l.id] }}
+                  />
+                  {lineName.get(l.id)}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <button onClick={() => setLegendOpen(false)}>閉じる</button>
+        </div>
       )}
 
       <section className="panel">
@@ -265,7 +310,14 @@ export default function App() {
               </>
             ) : (
               <p className="panel__message panel__message--center">
-                {node(options[0]?.to ?? race.position).name} へ…
+                {options[0] && (
+                  <>
+                    {lineName.get(
+                      lineForStep(options[0], phase.route.lineIds.at(-1)),
+                    )}
+                    で {node(options[0].to).name} へ…
+                  </>
+                )}
               </p>
             )}
           </>

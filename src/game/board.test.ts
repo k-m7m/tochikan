@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import rail from '../data/generated/rail.json'
 import type { RailData } from '../data/types'
-import { buildBoard, countTransfers, hopDistances, shortestPath } from './board'
+import {
+  buildBoard,
+  countTransfers,
+  hopDistances,
+  lineChains,
+  shortestPath,
+} from './board'
 import { BEGINNER_LINES } from './lines'
 import { makeTestBoard } from './testBoard'
 
@@ -39,5 +45,22 @@ describe('初級の盤面（実データ）', () => {
       '吉祥寺',
     )
     expect(countTransfers(route)).toBe(0)
+  })
+})
+
+describe('lineChains', () => {
+  it('一本道の路線は、1本の並びになる', () => {
+    const t = makeTestBoard({ L: ['A', 'B', 'C', 'D'] })
+    const chains = lineChains(t.board, 'L')
+    expect(chains).toHaveLength(1)
+    expect(chains[0].map(t.name)).toEqual(['A', 'B', 'C', 'D'])
+  })
+
+  it('環状線は、始めと終わりが同じ駅の1本の並びになる', () => {
+    const board = buildBoard(rail as RailData, BEGINNER_LINES)
+    const chains = lineChains(board, '11302') // 山手線
+    expect(chains).toHaveLength(1)
+    expect(chains[0]).toHaveLength(31)
+    expect(chains[0][0]).toBe(chains[0][30])
   })
 })

@@ -12,7 +12,9 @@ import {
 import maplibreWorkerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url'
 import 'maplibre-gl/dist/maplibre-gl.css'
 import { useEffect, useRef, useState } from 'react'
-import type { Board, NodeId, Route } from '../game/board'
+import type { LineId } from '../data/types'
+import { lineChains, type Board, type NodeId, type Route } from '../game/board'
+import { darken } from '../lib/color'
 import type { LatLng } from '../lib/geo'
 import { baseStyle } from '../map/style'
 import './MapView.css'
@@ -38,7 +40,11 @@ export interface MapFocus {
 
 interface Props {
   board: Board
-  lineColors: Record<string, string>
+  lineColors: Record<LineId, string>
+  /** 地図の線に沿って書く路線名 */
+  lineNames: Record<LineId, string>
+  /** この路線だけを目立たせる */
+  highlightLine?: LineId
   current: NodeId
   /** 名前を出すマス（通ったことのある駅） */
   known: ReadonlySet<NodeId>
@@ -58,18 +64,38 @@ type Label = {
   kind: 'current' | 'goal' | 'candidate'
 }
 
-function boardGeoJSON(board: Board, lineColors: Record<string, string>) {
+function boardGeoJSON(
+  board: Board,
+  lineColors: Record<LineId, string>,
+  lineNames: Record<LineId, string>,
+) {
   const pos = (id: NodeId) => {
     const n = board.nodes.get(id)!
     return [n.lng, n.lat]
   }
+  const colorOf = (lineId: LineId) => lineColors[lineId] ?? '#999999'
   const lines: FeatureCollection = {
     type: 'FeatureCollection',
     features: board.segments.map((s) => ({
       type: 'Feature',
-      properties: { color: lineColors[s.lineId] ?? '#999' },
+      properties: { lineId: s.lineId, color: colorOf(s.lineId) },
       geometry: { type: 'LineString', coordinates: [pos(s.from), pos(s.to)] },
     })),
+  }
+  // 路線名は、分岐や終点で区切った長い線に沿って書く
+  const lineLabels: FeatureCollection = {
+    type: 'FeatureCollection',
+    features: board.lines.flatMap((line) =>
+      lineChains(board, line.id).map((chain): Feature => ({
+        type: 'Feature',
+        properties: {
+          lineId: line.id,
+          name: lineNames[line.id] ?? line.name,
+          textColor: darken(colorOf(line.id), 0.45),
+        },
+        geometry: { type: 'LineString', coordinates: chain.map(pos) },
+      })),
+    ),
   }
   const stations: FeatureCollection = {
     type: 'FeatureCollection',
@@ -79,7 +105,7 @@ function boardGeoJSON(board: Board, lineColors: Record<string, string>) {
       geometry: { type: 'Point', coordinates: [n.lng, n.lat] },
     })),
   }
-  return { lines, stations }
+  return { lines, lineLabels, stations }
 }
 
 function pointsGeoJSON(board: Board, ids: Iterable<NodeId>): FeatureCollection {
@@ -116,6 +142,8 @@ function routeGeoJSON(
 export default function MapView({
   board,
   lineColors,
+  lineNames,
+  highlightLine,
   current,
   known,
   candidates,
@@ -161,8 +189,9 @@ export default function MapView({
 
     // 下地のタイルの読み込みを待たずに、スタイルができた時点で路線や駅を重ねる
     map.once('style.load', () => {
-      const geo = boardGeoJSON(board, lineColors)
+      const geo = boardGeoJSON(board, lineColors, lineNames)
       map.addSource('rail-lines', { type: 'geojson', data: geo.lines })
+      map.addSource('line-labels', { type: 'geojson', data: geo.lineLabels })
       map.addSource('rail-stations', { type: 'geojson', data: geo.stations })
       map.addSource('route', { type: 'geojson', data: routeGeoJSON(board) })
       map.addSource('candidates', {
@@ -226,6 +255,26 @@ export default function MapView({
           'circle-radius': ['interpolate', ['linear'], ['zoom'], 10, 7, 15, 14],
         },
       })
+      // 路線名。線に沿って書く。駅の名前と重なるときは駅の名前を優先する
+      map.addLayer({
+        id: 'line-labels',
+        type: 'symbol',
+        source: 'line-labels',
+        layout: {
+          'symbol-placement': 'line',
+          'symbol-spacing': 280,
+          'text-field': ['get', 'name'],
+          'text-font': ['NotoSansJP-Regular'],
+          'text-size': ['interpolate', ['linear'], ['zoom'], 10, 10, 15, 13],
+          'text-keep-upright': true,
+          'text-offset': [0, -0.9],
+        },
+        paint: {
+          'text-color': ['get', 'textColor'],
+          'text-halo-color': 'rgba(255, 255, 255, 0.9)',
+          'text-halo-width': 1.5,
+        },
+      })
       // 覚えた駅の名前。重なる名前は地図が自動で隠す
       map.addLayer({
         id: 'known-labels',
@@ -265,7 +314,24 @@ export default function MapView({
       mapRef.current = null
       setLoaded(false)
     }
-  }, [board, lineColors])
+  }, [board, lineColors, lineNames])
+
+  // 選んだ路線だけを目立たせる
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loaded) return
+    map.setPaintProperty(
+      'rail-lines',
+      'line-opacity',
+      highlightLine
+        ? ['case', ['==', ['get', 'lineId'], highlightLine], 1, 0.15]
+        : 0.85,
+    )
+    map.setFilter(
+      'line-labels',
+      highlightLine ? ['==', ['get', 'lineId'], highlightLine] : null,
+    )
+  }, [loaded, highlightLine])
 
   // 候補と、直前に進んだ道順を描く
   useEffect(() => {
