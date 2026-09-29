@@ -2,25 +2,35 @@
 
 import type { Board, NodeId, Route } from './board'
 import { hopDistances, shortestPath } from './board'
-import { reachableNodes, type TransferRule } from './movement'
+import { lineForStep, nextSteps, type StepOption } from './movement'
 
 export interface RaceSettings {
   /** 回る目的地の数 */
   goals: number
-  rule: TransferRule
   /** 目的地は、今いるマスから最短でこの駅数の範囲にあるものを選ぶ */
   goalHops: { min: number; max: number }
 }
 
 export const defaultRaceSettings: RaceSettings = {
   goals: 5,
-  rule: 'anywhere',
   goalHops: { min: 6, max: 15 },
 }
 
 export type RacePhase =
   | { kind: 'ready' }
-  | { kind: 'choosing'; dice: number; options: Map<NodeId, Route> }
+  | {
+      /** サイコロの目の数だけ、1駅ずつ進んでいる途中 */
+      kind: 'moving'
+      dice: number
+      /** 残りの駅数 */
+      remaining: number
+      /** このターンに出発したマス */
+      from: NodeId
+      /** このターンに進んだ道順 */
+      route: Route
+      /** 直前にいたマス（すぐ戻らないため） */
+      cameFrom?: NodeId
+    }
   | { kind: 'arrived'; shortest: Route; turnsForGoal: number }
   | { kind: 'finished' }
 
@@ -85,48 +95,74 @@ export function startRace(
   }
 }
 
-/** サイコロを振り、行けるマスを出す */
-export function roll(
-  state: RaceState,
-  board: Board,
-  settings: RaceSettings,
-  dice: number,
-): RaceState {
+/** サイコロを振る。このあと step で1駅ずつ進む */
+export function roll(state: RaceState, dice: number): RaceState {
   if (state.phase.kind !== 'ready') return state
-  const options = reachableNodes(board, state.position, dice, {
-    rule: settings.rule,
-    canStopEarly: (node) => node === state.goal,
-  })
   return {
     ...state,
     turns: state.turns + 1,
-    phase: { kind: 'choosing', dice, options },
+    phase: {
+      kind: 'moving',
+      dice,
+      remaining: dice,
+      from: state.position,
+      route: { nodes: [], lineIds: [] },
+    },
   }
 }
 
-/** 行き先を選んで進む */
-export function choose(
-  state: RaceState,
-  board: Board,
-  node: NodeId,
-): RaceState {
-  if (state.phase.kind !== 'choosing') return state
-  const route = state.phase.options.get(node)
-  if (!route) return state
-  const lastMove = { from: state.position, route }
-  if (node !== state.goal) {
-    return { ...state, position: node, lastMove, phase: { kind: 'ready' } }
+/** 次に進める1駅。進んでいる途中でなければ空 */
+export function stepOptions(state: RaceState, board: Board): StepOption[] {
+  if (state.phase.kind !== 'moving') return []
+  return nextSteps(board, state.position, state.phase.cameFrom)
+}
+
+/**
+ * 1駅進む。
+ * - 目的地を通るときは、目の数が残っていても目的地で止まる
+ * - 目の数を使い切ったら止まる。ただし都外の駅では止まれないので、次の駅まで進む
+ * - 終点などで先へ進めなくなったら、目の数が残っていてもそこで止まる
+ */
+export function step(state: RaceState, board: Board, to: NodeId): RaceState {
+  const { phase } = state
+  if (phase.kind !== 'moving') return state
+  const option = stepOptions(state, board).find((o) => o.to === to)
+  if (!option) return state
+
+  const route: Route = {
+    nodes: [...phase.route.nodes, to],
+    lineIds: [
+      ...phase.route.lineIds,
+      lineForStep(option, phase.route.lineIds.at(-1)),
+    ],
+  }
+  const lastMove = { from: phase.from, route }
+
+  if (to === state.goal) {
+    return {
+      ...state,
+      position: to,
+      lastMove,
+      reachedGoals: [...state.reachedGoals, to],
+      phase: {
+        kind: 'arrived',
+        shortest: shortestPath(board, state.goalStartedAt, to)!,
+        turnsForGoal: state.turns - state.goalStartedTurn,
+      },
+    }
+  }
+
+  let remaining = phase.remaining - 1
+  if (remaining === 0 && !board.nodes.get(to)!.inTokyo) remaining = 1
+  const deadEnd = nextSteps(board, to, state.position).length === 0
+  if (remaining === 0 || deadEnd) {
+    return { ...state, position: to, lastMove, phase: { kind: 'ready' } }
   }
   return {
     ...state,
-    position: node,
+    position: to,
     lastMove,
-    reachedGoals: [...state.reachedGoals, node],
-    phase: {
-      kind: 'arrived',
-      shortest: shortestPath(board, state.goalStartedAt, node)!,
-      turnsForGoal: state.turns - state.goalStartedTurn,
-    },
+    phase: { ...phase, remaining, route, cameFrom: state.position },
   }
 }
 

@@ -1,95 +1,69 @@
-// サイコロの目の数で行けるマスを求める。
+// すごろくの移動。サイコロの目の数だけ、1駅ずつ進む。
+// 分岐や乗換駅では、プレイヤーが進む方向を選ぶ（途中でも乗り換えられる）。
 
 import type { LineId } from '../data/types'
-import type { Board, NodeId, Route } from './board'
-import { countTransfers } from './board'
+import type { Board, NodeId } from './board'
 
-/**
- * 乗換のルール（試作で比べるため切り替えられる）
- * - anywhere：通過中の乗換駅でも乗り換えられる
- * - onlyWhenStopped：止まった駅でだけ乗り換えられる（進み始めたら同じ路線を進む）
- */
-export type TransferRule = 'anywhere' | 'onlyWhenStopped'
-
-export interface MoveOptions {
-  rule: TransferRule
-  /** 目の数に満たなくても止まれるマス（目的地など） */
-  canStopEarly?: (node: NodeId) => boolean
+/** 次に進める1駅と、そこへ行ける路線 */
+export interface StepOption {
+  to: NodeId
+  lineIds: LineId[]
 }
 
 /**
- * 出発マスから、ちょうど steps 駅進んで止まれるマスと、そこまでの道順を返す。
- * - 1回の移動で同じマスを2度通らない（来たマスへ戻ったり、輪を回ったりしない）
- * - 終点などで進めなくなったら、そこで止まる
- * - 都外のマスは通過できるが、止まれない
- * - canStopEarly のマスは、途中でも止まれる
- * 同じマスへの道順が複数あるときは、乗換が少ないものを選ぶ。
+ * これより大きく曲がる動きはできない（度）。
+ * 並んで走る別の路線に乗り換えて、来た方向へ戻るのを防ぐため
+ * （例：新大久保から新宿に来て、埼京線で池袋へ戻る）
  */
-export function reachableNodes(
+const MAX_TURN_DEGREES = 120
+
+/** a → b → c と進むときに、b で曲がる角度（度） */
+function turnDegrees(board: Board, a: NodeId, b: NodeId, c: NodeId): number {
+  const pa = board.nodes.get(a)!
+  const pb = board.nodes.get(b)!
+  const pc = board.nodes.get(c)!
+  // 経度1度の長さは緯度によって縮むので、そのぶんを直す
+  const k = Math.cos((pb.lat * Math.PI) / 180)
+  const ux = (pb.lng - pa.lng) * k
+  const uy = pb.lat - pa.lat
+  const vx = (pc.lng - pb.lng) * k
+  const vy = pc.lat - pb.lat
+  const lengths = Math.hypot(ux, uy) * Math.hypot(vx, vy)
+  if (lengths === 0) return 0
+  const cos = Math.min(1, Math.max(-1, (ux * vx + uy * vy) / lengths))
+  return (Math.acos(cos) * 180) / Math.PI
+}
+
+/**
+ * 今いるマスから、次に進める隣のマスを返す。
+ * - 来たマス（cameFrom）へすぐ戻る動きや、大きく曲がって来た方向へ戻る動きはしない
+ * - 同じ隣のマスへ複数の路線で行けるときは、1つの選択肢にまとめる
+ */
+export function nextSteps(
   board: Board,
-  from: NodeId,
-  steps: number,
-  options: MoveOptions,
-): Map<NodeId, Route> {
-  const result = new Map<NodeId, Route>()
-  const onPath = new Set<NodeId>([from])
-  const route: Route = { nodes: [], lineIds: [] }
-
-  const record = () => {
-    const dest = route.nodes[route.nodes.length - 1]
-    if (dest === undefined || !board.nodes.get(dest)!.inTokyo) return
-    const current = result.get(dest)
-    if (!current || countTransfers(route) < countTransfers(current)) {
-      result.set(dest, { nodes: [...route.nodes], lineIds: [...route.lineIds] })
+  at: NodeId,
+  cameFrom?: NodeId,
+): StepOption[] {
+  const byNode = new Map<NodeId, LineId[]>()
+  for (const link of board.links.get(at) ?? []) {
+    if (link.to === cameFrom) continue
+    if (
+      cameFrom !== undefined &&
+      turnDegrees(board, cameFrom, at, link.to) > MAX_TURN_DEGREES
+    ) {
+      continue
     }
+    byNode.set(link.to, [...(byNode.get(link.to) ?? []), link.lineId])
   }
+  return [...byNode].map(([to, lineIds]) => ({ to, lineIds }))
+}
 
-  /** 次に進めるマスと、使える路線。同じ路線で進めるなら、乗り換えない */
-  const nextMoves = (node: NodeId, lineId: LineId | undefined) => {
-    const byNode = new Map<NodeId, LineId[]>()
-    for (const link of board.links.get(node) ?? []) {
-      if (onPath.has(link.to)) continue
-      if (
-        options.rule === 'onlyWhenStopped' &&
-        lineId !== undefined &&
-        link.lineId !== lineId
-      ) {
-        continue
-      }
-      byNode.set(link.to, [...(byNode.get(link.to) ?? []), link.lineId])
-    }
-    return [...byNode].map(([to, lineIds]) => ({
-      to,
-      lineIds:
-        lineId !== undefined && lineIds.includes(lineId) ? [lineId] : lineIds,
-    }))
-  }
-
-  const visit = (node: NodeId, lineId: LineId | undefined) => {
-    if (route.nodes.length > 0 && options.canStopEarly?.(node)) record()
-    if (route.nodes.length === steps) {
-      record()
-      return
-    }
-    const moves = nextMoves(node, lineId)
-    if (moves.length === 0) {
-      // 終点などで目が余ったら、そこで止まる
-      record()
-      return
-    }
-    for (const move of moves) {
-      onPath.add(move.to)
-      for (const next of move.lineIds) {
-        route.nodes.push(move.to)
-        route.lineIds.push(next)
-        visit(move.to, next)
-        route.nodes.pop()
-        route.lineIds.pop()
-      }
-      onPath.delete(move.to)
-    }
-  }
-
-  visit(from, undefined)
-  return result
+/** 進むときに使う路線。今乗っている路線で行けるなら乗り換えない */
+export function lineForStep(
+  option: StepOption,
+  currentLine: LineId | undefined,
+): LineId {
+  return currentLine !== undefined && option.lineIds.includes(currentLine)
+    ? currentLine
+    : option.lineIds[0]
 }

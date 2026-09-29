@@ -48,6 +48,8 @@ interface Props {
   /** 地図に出すときだけ渡す */
   goal?: NodeId
   lastMove?: { from: NodeId; route: Route }
+  /** このマスが画面の端に近づいたら、地図を動かして追いかける */
+  follow?: NodeId
   focus?: MapFocus
 }
 
@@ -120,6 +122,7 @@ export default function MapView({
   onChoose,
   goal,
   lastMove,
+  follow,
   focus,
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -316,6 +319,24 @@ export default function MapView({
         .addTo(map)
     })
   }, [loaded, board, known, candidates, goal, current])
+
+  // コマが画面の端（下はパネルに隠れる部分）に近づいたら、地図を動かす
+  useEffect(() => {
+    const map = mapRef.current
+    if (!map || !loaded || !follow) return
+    const n = board.nodes.get(follow)!
+    const p = map.project([n.lng, n.lat])
+    const { clientWidth: w, clientHeight: h } = map.getContainer()
+    const inside =
+      p.x > w * 0.15 && p.x < w * 0.85 && p.y > h * 0.15 && p.y < h * 0.6
+    if (!inside) {
+      map.easeTo({
+        center: [n.lng, n.lat],
+        offset: [0, -h * 0.12],
+        duration: 350,
+      })
+    }
+  }, [loaded, board, follow])
 
   // 指定された範囲が収まるように動かす。
   // focus の中身ではなく key が変わったときだけ動かす（操作中に勝手に動くと使いにくいため）
