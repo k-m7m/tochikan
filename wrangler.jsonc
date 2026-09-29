@@ -1,0 +1,10 @@
+// Cloudflare Workers の設定。静的なファイル（dist）だけを配信する。
+// 手順は docs/deploy.md を参照。
+{
+  "name": "tochikan",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application",
+  },
+}
