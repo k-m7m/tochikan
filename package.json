@@ -11,7 +11,8 @@
     "typecheck": "tsc -b",
     "test": "vitest run",
     "format": "prettier --write .",
-    "format:check": "prettier --check ."
+    "format:check": "prettier --check .",
+    "data:build": "node scripts/build-rail-data.ts"
   },
   "dependencies": {
     "maplibre-gl": "^6.11.2",
