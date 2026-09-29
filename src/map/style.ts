@@ -18,6 +18,9 @@ export const baseColors = {
 
 export const baseStyle: StyleSpecification = {
   version: 8,
+  // 駅名を地図に書くための文字データ。日本語の文字は端末のフォントで描かれる
+  glyphs:
+    'https://gsi-cyberjapan.github.io/optimal_bvmap/glyphs/{fontstack}/{range}.pbf',
   sources: {
     gsi: {
       type: 'vector',

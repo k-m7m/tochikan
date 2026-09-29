@@ -3,51 +3,40 @@
   inset: 0;
 }
 
-.map-pin {
+/* 出典の表示を、上のお題の帯の下に置く */
+.map-view .maplibregl-ctrl-top-left {
+  top: 68px;
+}
+
+.map-label {
   /* position は MapLibre が absolute にするので指定しない */
-  margin-bottom: 10px;
   padding: 3px 8px;
+  border: none;
   border-radius: 999px;
+  font: inherit;
   font-size: 12px;
   font-weight: bold;
   white-space: nowrap;
-  color: #fff;
   box-shadow: 0 1px 4px rgb(0 0 0 / 0.2);
   pointer-events: none;
 }
 
-.map-pin::after {
-  content: '';
-  position: absolute;
-  left: 50%;
-  bottom: -5px;
-  transform: translateX(-50%);
-  border: 5px solid transparent;
-  border-bottom: 0;
-  border-top-color: inherit;
+.map-label--candidate {
+  min-height: 0;
+  padding: 5px 10px;
+  background: #ff8fa3;
+  color: #fff;
+  font-size: 13px;
+  pointer-events: auto;
+  cursor: pointer;
 }
 
-.map-pin--current {
+.map-label--current {
   background: #4a3b35;
-  border-top-color: #4a3b35;
+  color: #fff;
 }
 
-.map-pin--goal {
+.map-label--goal {
   background: #f5a623;
-  border-top-color: #f5a623;
-}
-
-.map-pin--guess {
-  background: #7a8cff;
-  border-top-color: #7a8cff;
-}
-
-.map-pin--answer {
-  background: #e8647f;
-  border-top-color: #e8647f;
-}
-
-/* 出典の表示を、上のお題の帯の下に置く */
-.map-view .maplibregl-ctrl-top-left {
-  top: 68px;
+  color: #fff;
 }

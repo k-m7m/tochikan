@@ -44,7 +44,7 @@ npm run lint && npm run format:check && npm run typecheck && npm test && npm run
 
 ## ディレクトリ
 
-- `src/data`：駅・路線データと型（`generated` は変換スクリプトが作るファイル。`prototype` は試作用の仮データ）
+- `src/data`：駅・路線データと型（`generated` は変換スクリプトが作るファイル）
 - `src/game`：すごろくのルールなど、画面に依存しない処理（テストを書く）
 - `src/lib`：距離の計算など、汎用の処理
 - `src/components`：画面の部品
