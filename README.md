@@ -18,4 +18,5 @@ npm run dev
 
 ## 出典
 
-- 地図：[国土地理院](https://maps.gsi.go.jp/development/ichiran.html)のベクトルタイル
+- 地図：[国土地理院最適化ベクトルタイル](https://github.com/gsi-cyberjapan/optimal_bvmap)
+- 試作用の駅の位置：「国土数値情報（鉄道データ）」（国土交通省）を加工して作成

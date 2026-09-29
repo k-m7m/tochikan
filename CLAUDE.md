@@ -35,7 +35,8 @@ npm run lint && npm run format:check && npm run typecheck && npm test && npm run
 ## 技術構成
 
 - React + TypeScript + Vite
-- 地図：MapLibre GL JS ＋ 地理院ベクトルタイル。下地の地図には文字・線路・駅を出さない（答えが見えるため）
+- 地図：MapLibre GL JS ＋ 国土地理院最適化ベクトルタイル（`src/map/style.ts`）。下地の地図には文字・線路・駅を出さない（答えが見えるため）
+- MapLibre の worker は Vite でまとめ、`setWorkerUrl` で渡している（指定しないとビルド後に地図が出ない）
 - 駅・路線データ：静的なJSON（`src/data`）。駅の並びは「隣の駅とのつながり」で持つ
 - 進捗の保存：localStorage
 
@@ -45,3 +46,4 @@ npm run lint && npm run format:check && npm run typecheck && npm test && npm run
 - `src/game`：すごろくのルールなど、画面に依存しない処理（テストを書く）
 - `src/lib`：距離の計算など、汎用の処理
 - `src/components`：画面の部品
+- `src/map`：下地の地図のスタイル
