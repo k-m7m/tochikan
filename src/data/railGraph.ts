@@ -1,4 +1,4 @@
-import type { Line, LineId, RailData, Station, StationId } from './types'
+import type { Line, LineId, RailData, Station, StationId } from './types.ts'
 
 export interface RailGraph {
   data: RailData
