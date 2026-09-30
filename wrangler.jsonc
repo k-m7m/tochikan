@@ -7,4 +7,7 @@
     "directory": "./dist",
     "not_found_handling": "single-page-application",
   },
+  // PRごとのお試し版（Worker Previews）を作る `wrangler preview` に必要。
+  // 中身は空でよい（assets などの設定は上のものがそのまま使われる）
+  "previews": {},
 }
